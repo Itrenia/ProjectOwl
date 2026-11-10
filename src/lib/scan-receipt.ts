@@ -101,6 +101,20 @@ export async function scanReceipt(file: File): Promise<ScanOutcome> {
     );
   }
 
+  if (res.status === 503 || json?.code === "LLM_UNAVAILABLE") {
+    return fail(
+      "Scanner is busy right now",
+      serverMessage ?? "Try again shortly, or enter the expense manually."
+    );
+  }
+
+  if (res.status === 504 || json?.code === "LLM_TIMEOUT") {
+    return fail(
+      "That took too long",
+      serverMessage ?? "The scan didn't finish in time. Try again, or enter the expense manually."
+    );
+  }
+
   if (!res.ok || !json) {
     return fail(
       "Couldn't read that receipt",

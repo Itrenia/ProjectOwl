@@ -12,6 +12,7 @@
     "test:allocation": "tsx scripts/run-allocation-tests.ts",
     "test:settlement": "tsx scripts/run-settlement-tests.ts",
     "test:security": "tsx scripts/run-security-tests.ts",
+    "test:receipt-scan": "node --import tsx scripts/run-receipt-scan-tests.ts",
     "test:sw": "tsx scripts/run-sw-tests.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",

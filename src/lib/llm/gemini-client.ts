@@ -4,19 +4,21 @@ import {
   type ReceiptExtractionResult,
 } from "@/lib/schemas/receipt";
 import { isRateLimitError, withRetry } from "@/lib/retry";
-import { LLMError, RateLimitError, ValidationError } from "@/lib/errors";
+import { LLMError, LLMTimeoutError, LLMUnavailableError, RateLimitError, ValidationError } from "@/lib/errors";
 import { ERROR_MESSAGES } from "@/lib/constants";
 import { z } from "zod";
 
 /**
- * Wall-clock ceiling for the retry sequence.
+ * Retry waits and provider calls must both finish before the route's 60s limit.
  *
- * Sized to fit inside the extract route's `maxDuration = 60`, leaving headroom
- * for reading the upload, base64-encoding it, and the final Gemini call. The
- * two numbers are coupled: raising one without the other reintroduces the
- * mismatch where the function is killed mid-retry and the real error is lost.
+ * The retry budget alone cannot bound a fetch that never answers. The 45s
+ * AbortSignal covers every attempt, including a fallback, and leaves time for
+ * upload processing and a JSON error response before Vercel kills the route.
  */
 const RETRY_BUDGET_MS = 40_000;
+const PROVIDER_DEADLINE_MS = 45_000;
+const PRIMARY_MODEL = "gemini-flash-latest";
+const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * Prompt copied from the Python notebook's RECEIPT_PROMPT.
@@ -86,7 +88,7 @@ export class GeminiClient implements LLMClient {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = "gemini-flash-latest") {
+  constructor(apiKey: string, model = PRIMARY_MODEL) {
     this.apiKey = apiKey;
     this.model = model;
   }
@@ -111,17 +113,46 @@ export class GeminiClient implements LLMClient {
         },
       ],
       generationConfig: {
-        temperature: 0.1,
         responseMimeType: "application/json",
         responseSchema: RECEIPT_RESPONSE_SCHEMA,
       },
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const signal = AbortSignal.timeout(PROVIDER_DEADLINE_MS);
+    const startedAt = Date.now();
+    let raw: string;
+    try {
+      try {
+        raw = await this.callWithRetry(this.urlFor(this.model), body, RETRY_BUDGET_MS, 1, signal);
+      } catch (err) {
+        // A 503 is model capacity, not an image or account problem. Try another
+        // stable model while there is still time in this function's budget.
+        if (!(err instanceof LLMError) || err.providerStatus !== 503 || this.model !== PRIMARY_MODEL) {
+          throw err;
+        }
 
-    const raw = await this.callWithRetry(url, body);
+        const remainingMs = RETRY_BUDGET_MS - (Date.now() - startedAt);
+        if (remainingMs <= 0) throw new LLMUnavailableError();
+
+        try {
+          raw = await this.callWithRetry(this.urlFor(FALLBACK_MODEL), body, remainingMs, 1, signal);
+        } catch (fallbackErr) {
+          if (fallbackErr instanceof LLMError && fallbackErr.providerStatus === 503) {
+            throw new LLMUnavailableError();
+          }
+          throw fallbackErr;
+        }
+      }
+    } catch (err) {
+      if (signal.aborted) throw new LLMTimeoutError();
+      throw err;
+    }
 
     return this.parseResponse(raw);
+  }
+
+  private urlFor(model: string): string {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
   }
 
   /**
@@ -131,11 +162,17 @@ export class GeminiClient implements LLMClient {
    * than LLMError: it's the one failure here that clears on its own, and the
    * caller can only say so if it can tell it apart.
    */
-  private async callWithRetry(url: string, body: unknown): Promise<string> {
+  private async callWithRetry(
+    url: string,
+    body: unknown,
+    budgetMs: number,
+    maxRetries: number,
+    signal: AbortSignal
+  ): Promise<string> {
     try {
       return await withRetry(
-        () => this.callOnce(url, body),
-        { maxRetries: 2, baseDelayMs: 1000, budgetMs: RETRY_BUDGET_MS }
+        () => this.callOnce(url, body, signal),
+        { maxRetries, baseDelayMs: 1000, budgetMs }
       );
     } catch (err) {
       if (isRateLimitError(err)) throw new RateLimitError(ERROR_MESSAGES.LLM_BUSY);
@@ -143,11 +180,12 @@ export class GeminiClient implements LLMClient {
     }
   }
 
-  private async callOnce(url: string, body: unknown): Promise<string> {
+  private async callOnce(url: string, body: unknown, signal: AbortSignal): Promise<string> {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!res.ok) {
@@ -160,15 +198,19 @@ export class GeminiClient implements LLMClient {
 
       throw new LLMError(
         `Gemini API returned ${res.status}: ${errorText.slice(0, 300)}`,
-        isRetryable
+        isRetryable,
+        res.status
       );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = await res.json();
 
-    // Extract the text content from Gemini's response structure
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+    // Thinking-capable models may put a reasoning part before the final JSON.
+    const text = json?.candidates?.[0]?.content?.parts?.find(
+      (part: { thought?: boolean; text?: string }) =>
+        !part?.thought && typeof part?.text === "string" && part.text.length > 0
+    )?.text ?? null;
 
     if (!text) {
       // Check for blocked content (safety filters)
