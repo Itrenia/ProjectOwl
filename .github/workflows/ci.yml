@@ -35,5 +35,8 @@ jobs:
       - name: Test - Item Allocation
         run: npm run test:allocation
 
+      - name: Test - Receipt Scan Recovery
+        run: npm run test:receipt-scan
+
       - name: Lint (if available)
         run: npm run lint 2>/dev/null || echo "No lint script configured"
