@@ -14,7 +14,8 @@ interface CalculatorKeypadProps {
 
 /**
  * Calculator keypad component for numeric input with addition support.
- * Auto-calculates when closed by clicking outside or pressing X.
+ * The expression is committed by the check key, by tapping outside, or by
+ * Enter/Escape on desktop.
  * Provides a mobile-friendly, touch-safe interface for entering amounts.
  */
 export default function CalculatorKeypad({
@@ -128,16 +129,9 @@ export default function CalculatorKeypad({
           />
         </div>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pb-3">
+        {/* Header — the check key below is the commit affordance. */}
+        <div className="px-5 pb-3">
           <h3 className="text-headline font-semibold text-ink">{title}</h3>
-          <button
-            onClick={handleClose}
-            className="pressable text-subhead font-medium"
-            style={{ color: "var(--color-blueberry-600)", minHeight: 44, minWidth: 44 }}
-          >
-            Done
-          </button>
         </div>
 
         {/* Display */}
@@ -270,12 +264,25 @@ export default function CalculatorKeypad({
             >
               .
             </button>
+            {/* Commits the expression and closes the keypad. */}
             <button
-              onClick={handleClear}
-              className="col-span-2 h-16 bg-hairline hover:bg-hairline active:bg-hairline active:scale-95 rounded-2xl text-lg font-semibold text-ink transition-all touch-manipulation"
-              aria-label="Clear all"
+              onClick={handleClose}
+              className="col-span-2 h-16 flex items-center justify-center bg-positive hover:bg-positive active:brightness-90 active:scale-95 rounded-2xl text-white transition-all touch-manipulation"
+              aria-label="Done"
             >
-              Clear
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M4.5 12.5l5 5 10-11" />
+              </svg>
             </button>
           </div>
         </div>
@@ -283,7 +290,7 @@ export default function CalculatorKeypad({
         {/* Instructions */}
         <div className="px-4 py-3 bg-canvas text-center">
           <p className="text-xs text-ink-muted">
-            Tap outside or press ✕ to save
+            Tap the check or outside the keypad to save
           </p>
         </div>
       </div>

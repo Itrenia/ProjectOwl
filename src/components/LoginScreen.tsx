@@ -174,14 +174,16 @@ function MockUserPicker({ onSignedIn }: { onSignedIn: () => void }) {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Name"
+            aria-label="Name"
+            placeholder="e.g. Alex Tan"
             className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           />
           <input
             type="email"
             value={newEmail}
             onChange={(e) => setNewEmail(e.target.value)}
-            placeholder="Email"
+            aria-label="Email"
+            placeholder="e.g. alex@example.com"
             className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           />
           <button

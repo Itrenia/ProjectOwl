@@ -1,5 +1,146 @@
 # ProjectOwl — Devlog
 
+## 2026-08-30 — Placeholders were competing with what people typed
+
+Issue #76: placeholder text reads as content rather than as a hint. Two things
+were wrong, and only one of them was styling.
+
+### Styling — one rule, not six utilities
+There was **no `::placeholder` rule anywhere in the app**. Every field either
+carried a `placeholder:text-ink-muted` utility or silently fell back to
+Tailwind preflight's default, which is `currentColor` at 50% alpha — measured
+on the create-group input as `oklab(0.221 … / 0.5)`, a cold near-black wash. On
+a warm cream ground that reads as dirty grey rather than as a quiet hint, and
+it is the exact failure mode of styling by opt-in: the one field that forgot
+the class is the one that looked wrong.
+
+`input::placeholder, textarea::placeholder` now sets size, weight, colour and
+opacity in one place. Sized at `0.9em` rather than a fixed px so it steps down
+proportionally: the 14px create-group field gets 12.6px, the 16px description
+field 14.4px, the payment screen's 36px amount 32.4px. `opacity: 1` because
+Firefox dims placeholders on its own and the tone should be ours.
+
+Colour is a new `--color-ink-placeholder` (#68634f): the lightest warm tone
+that still clears **4.5:1 on every surface these fields appear on**, measured
+rather than assumed — 6.0:1 on the #FFFAEB card, 6.0:1 on the members sheet's
+white, 5.3:1 on Cream Sode at login, and 4.7:1 on the payment screen's
+blueberry-100, which is the binding one.
+
+An earlier revision took this down to 3.5:1 on the reasoning that a labelled
+field's hint may sit under the body-text bar. Review rejected that: form
+guidance is text and holds the normal requirement. Recession is carried by
+**size and weight** instead, which cost nothing in contrast.
+
+Worth recording, because it changes what "just put it back" means: the previous
+`--color-ink-muted` never met 4.5:1 on that payment card either — it measures
+5.5:1 on the card but **4.44:1** on blueberry-100. Restoring it would have left
+one field non-compliant. #68634f is fractionally darker than ink-muted for
+exactly that reason, which is also why the token isn't called `-faint`: a name
+implying "lighter than muted" would be a lie to the next reader.
+
+The three surviving `placeholder:text-ink-muted` utilities had to go with it.
+A Tailwind utility outranks a base-layer rule, so leaving them would have
+pinned those three fields at the darker tone while the other three lightened —
+the same opt-in inconsistency this rule exists to remove.
+
+The iOS 16px auto-zoom floor a few lines below is unaffected — that applies to
+the *field's* font-size, which is what governs zoom, so a sub-16px placeholder
+is safe.
+
+### Copy — a hint has to look like a hint
+`"Ramen in Shinjuku"` was indistinguishable from a description someone had
+already typed; that's the example the reporter cited. Prefixed with `e.g.`
+along with the member-invite field. `"e.g. Roommates, Japan Trip"` was already
+right and needed only the styling.
+
+### Fixed on the way past: two unlabelled fields
+The login screen's create-user inputs used `placeholder="Name"` and
+`"Email"` **as their only label** — there is no `<label>` and no `aria-label`
+on either. Converting those to examples would have left the fields nameless, so
+both gained an `aria-label` first. The placeholder-as-label pattern was already
+costing sighted users the field name the moment they typed; this makes the name
+permanent for assistive tech and keeps the visual form unchanged.
+
+The payment amount keeps `0.00` — a numeric hint, not a name — but at 32.4px
+non-bold muted it now reads as an empty field rather than as a value of zero.
+
+### Verification
+Measured `getComputedStyle(el, "::placeholder")` on every placeholder in the
+app, across five screens: compose, groups list, group members, payment, login.
+All six report `rgb(107, 102, 86)` (`--color-ink-muted`), weight 400, opacity 1,
+and 0.9× their field's size. Before/after taken on the same element by deleting
+the new rule from `document.styleSheets` at runtime and re-measuring, rather
+than trusting the diff: 14px/50%-alpha-ink → 12.6px/ink-muted.
+
+`tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35.
+
+Not verified: `next build`, skipped because it clobbers `.next` under a running
+dev server. The rule compiles — it is present in `document.styleSheets` at
+runtime, which is what the before/after toggle manipulated.
+## 2026-08-28 — The calculator had two Clear buttons and no obvious commit
+
+Reported as issue #58: the keypad shows two "Clear" buttons. It did — a red
+`C` in the operator column and a wide grey `Clear` across the bottom row.
+
+### The two were genuinely the same button
+Both were wired to the identical `handleClear` (`setExpression("")`) — no
+clear-entry vs. clear-all distinction, nothing behind the duplication. So one
+of them could go without costing anything.
+
+### Fixed
+- **The wide bottom `Clear` is now the commit key**, carrying a stroked check
+  and wired to `handleClose`: evaluate the expression, hand it to `onConfirm`,
+  let the caller close the pad. It is `--color-positive` green, so the pad's
+  three coloured keys each carry a distinct job: red `C` destroys, Blueberry `+`
+  operates, green ✓ confirms. White on it measures 6.44:1. All four call sites
+  (`ExpenseComposer` ×3, `ItemAssigner`) already commit-and-close on
+  `onConfirm`, so nothing outside the component changed.
+- **The red `C` stays** as the pad's one clear. Removing the *duplicate* is
+  what the issue asked for; removing clearing altogether would have left a long
+  expression to be dismantled one backspace at a time.
+- **The header's text `Done` was removed.** With the check key present it was a
+  second commit affordance, which is the same complaint the issue was filed
+  about wearing a different word.
+- **The footer said "Tap outside or press ✕ to save"** and there has been no ✕
+  since the bottom-sheet rework. Now "Tap the check or outside the keypad to
+  save".
+
+Nothing else moved: 64px keys, 12px gaps, `C` / `⌫` / `+` down the operator
+column, `0` and `.` on the bottom row. An earlier pass had also re-laid the
+grid out and shrunk the keys; that was reverted as scope that the issue never
+asked for.
+
+### Green on a confirm key, against the standing rule
+The 2026-08-06 entry reserves green and red for owed/owing and says never to
+spend them on chrome. This spends green. The exception is deliberate and
+narrow: that rule exists so a *screen* doesn't grow a second identity competing
+with Blueberry, and there is no balance figure anywhere on the keypad for the
+colour to be misread against. Blueberry 900 was tried first — next to the `+`'s
+600 the two saturated keys still read as one button. The palette has no second
+accent, so hue had to come from the semantics or not at all.
+
+### Why a check and not the word
+The word is what the reporter suggested, and it was tried first. A check reads
+faster on a key that sits under a thumb, and it keeps the pad free of the only
+word among fourteen glyphs. The name survives where it has to: `aria-label` is
+still `Done`, and the footer line names it.
+
+### Verification
+Real browser against `npm run testmode`. The `aria-label` sweep returns
+`7 8 9 Clear 4 5 6 Backspace 1 2 3 Plus 0 "Decimal point" Done` — one clear,
+one commit. `99` then `C` empties the display; `12.50+8` previews `= $20.50`
+and the check (154×64) closes the pad and writes **$20.50** into the amount
+card. `tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35.
+
+Not verified: the share/payer keypads inside a real group — this machine's
+local `projectowl` database predates migration `0005`, so `/api/groups` 500s on
+a missing `transaction_payers`. Same component; only `title`/`unit`/
+`initialValue` differ. Also unverified through AO's own browser panel: its
+click and screenshot calls failed for the whole session, so the run above was
+driven against local Chrome over CDP instead.
+
 ## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
 
 A round of visual and interaction work off the back of reference screens the

@@ -32,6 +32,17 @@
      Hairline is cream's own shadow, not a gray. */
   --color-ink: #1a1a22; /* 15.3:1 on Cream Sode */
   --color-ink-muted: #6b6656; /*  5.1:1 on Cream Sode */
+  /* Placeholder hints. The lightest warm tone that still clears 4.5:1 on every
+     surface these fields actually appear on, measured rather than assumed:
+       #FFFAEB card (compose, create-group)  6.0:1
+       #FFFFFF  (members sheet)              6.0:1
+       #FFF0C9  Cream Sode (login)           5.3:1
+       #DDE2F2  blueberry-100 (payment)      4.7:1  <- the binding one
+     Note this is fractionally *darker* than --color-ink-muted, which reads
+     5.5:1 on the card but only 4.44:1 on the payment amount — so ink-muted
+     never met the bar on that surface either. Hint recession is carried by
+     size and weight in the ::placeholder rule, not by dropping contrast. */
+  --color-ink-placeholder: #68634f;
   /* Lifted a shade now that it separates a near-white card from a Cream Sode
      ground rather than two creams — the old #e0cfa4 read as a hard outline
      against white. */
@@ -271,6 +282,22 @@ body {
 .content-with-nav {
   padding-top: calc(4rem + var(--offline-banner-h));
   padding-bottom: var(--nav-clearance);
+}
+
+/* Placeholders are hints, not content. One rule, so a field can't opt out by
+   forgetting a utility class — the create-group input had, and fell back to
+   Tailwind preflight's `currentColor` at 50% alpha: a cold near-black wash that
+   on a warm ground reads as dirty grey rather than as a quiet hint. The token
+   is warm and chosen. Sized in `em` so it steps down proportionally whether the
+   field is body text or the payment screen's 36px amount. The iOS 16px floor
+   below applies to the field, not to this — it is the field's own font-size
+   that governs auto-zoom, so a sub-16px placeholder is safe. */
+input::placeholder,
+textarea::placeholder {
+  font-size: 0.9em;
+  font-weight: 400;
+  color: var(--color-ink-placeholder);
+  opacity: 1; /* Firefox dims placeholders by default; we set the tone ourselves. */
 }
 
 /* iOS Safari auto-zooms into any input/select/textarea with a font-size

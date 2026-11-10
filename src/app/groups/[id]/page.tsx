@@ -618,8 +618,8 @@ function MembersSheet({
                   setAddedName(null);
                 }}
                 onKeyDown={(e) => e.key === "Enter" && addByEmail()}
-                placeholder="friend@example.com"
-                className="flex-1 min-w-0 px-3.5 rounded-[12px] text-callout text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-blueberry-500"
+                placeholder="e.g. friend@example.com"
+                className="flex-1 min-w-0 px-3.5 rounded-[12px] text-callout text-ink focus:outline-none focus:ring-2 focus:ring-blueberry-500"
                 style={{
                   minHeight: 48,
                   background: "var(--color-surface-raised)",

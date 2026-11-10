@@ -298,7 +298,7 @@ export default function NewPaymentPage() {
                 step="0.01"
                 min="0"
                 placeholder="0.00"
-                className="w-40 text-4xl font-bold text-ink text-center bg-transparent focus:outline-none placeholder:text-ink-muted"
+                className="w-40 text-4xl font-bold text-ink text-center bg-transparent focus:outline-none"
               />
             </div>
             {showAllErrors && amount <= 0 && (
