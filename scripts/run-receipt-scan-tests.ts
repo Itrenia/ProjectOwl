@@ -20,6 +20,7 @@ const success = () =>
 
 async function main() {
   const originalFetch = globalThis.fetch;
+  const originalAbortTimeout = AbortSignal.timeout;
   const scan = () =>
     new GeminiClient("test-key").extractReceipt({
       imageBuffer: Buffer.from("receipt image"),
@@ -78,8 +79,40 @@ async function main() {
       assert.match(outcome.failure.message, /Try again shortly/);
     }
     console.log("PASS: the scan UI receives a useful temporary-error message");
+
+    globalThis.fetch = async () => new Response("<html>Timed out</html>", { status: 504 });
+    const timedOutOutcome = await scanReceipt(new File(["image"], "receipt.jpg", { type: "image/jpeg" }));
+    assert.equal(timedOutOutcome.ok, false);
+    if (!timedOutOutcome.ok) {
+      assert.equal(timedOutOutcome.failure.title, "That took too long");
+      assert.match(timedOutOutcome.failure.message, /Try again/);
+    }
+    console.log("PASS: a Vercel HTML 504 gives scan retry advice");
+
+    // Model a provider request that never responds. The test's shorter clock
+    // verifies the real fetch path aborts before the serverless deadline.
+    AbortSignal.timeout = () => originalAbortTimeout(25);
+    globalThis.fetch = async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    await assert.rejects(
+      Promise.race([
+        scan(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Gemini fetch exceeded its deadline")), 150)
+        ),
+      ]),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, "LLM_TIMEOUT");
+        assert.equal((error as { httpStatus?: number }).httpStatus, 504);
+        return true;
+      }
+    );
+    console.log("PASS: a hung Gemini request ends before Vercel's deadline");
   } finally {
     globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalAbortTimeout;
   }
 }
 

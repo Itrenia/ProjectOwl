@@ -41,6 +41,19 @@ export class LLMUnavailableError extends AppError {
   }
 }
 
+/** The provider did not answer before the receipt route's safety deadline. */
+export class LLMTimeoutError extends AppError {
+  constructor() {
+    super(
+      "The scan took too long. Try again, or enter the expense manually.",
+      "LLM_TIMEOUT",
+      504,
+      true
+    );
+    this.name = "LLMTimeoutError";
+  }
+}
+
 /**
  * RateLimitError — the provider's per-minute rate limit is exhausted and our
  * retry budget ran out waiting for it to clear.
