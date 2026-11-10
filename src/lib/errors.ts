@@ -18,9 +18,39 @@ export class AppError extends Error {
  * LLMError — the LLM provider returned an error or gave a bad response.
  */
 export class LLMError extends AppError {
-  constructor(message: string, retryable: boolean = false) {
+  constructor(
+    message: string,
+    retryable: boolean = false,
+    public readonly providerStatus?: number
+  ) {
     super(message, "LLM_FAILED", 502, retryable);
     this.name = "LLMError";
+  }
+}
+
+/** Both receipt extraction models are temporarily unavailable. */
+export class LLMUnavailableError extends AppError {
+  constructor() {
+    super(
+      "Receipt scanning is busy right now. Try again shortly, or enter the expense manually.",
+      "LLM_UNAVAILABLE",
+      503,
+      true
+    );
+    this.name = "LLMUnavailableError";
+  }
+}
+
+/** The provider did not answer before the receipt route's safety deadline. */
+export class LLMTimeoutError extends AppError {
+  constructor() {
+    super(
+      "The scan took too long. Try again, or enter the expense manually.",
+      "LLM_TIMEOUT",
+      504,
+      true
+    );
+    this.name = "LLMTimeoutError";
   }
 }
 
