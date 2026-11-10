@@ -4,7 +4,7 @@ import {
   type ReceiptExtractionResult,
 } from "@/lib/schemas/receipt";
 import { isRateLimitError, withRetry } from "@/lib/retry";
-import { LLMError, RateLimitError, ValidationError } from "@/lib/errors";
+import { LLMError, LLMUnavailableError, RateLimitError, ValidationError } from "@/lib/errors";
 import { ERROR_MESSAGES } from "@/lib/constants";
 import { z } from "zod";
 
@@ -17,6 +17,8 @@ import { z } from "zod";
  * mismatch where the function is killed mid-retry and the real error is lost.
  */
 const RETRY_BUDGET_MS = 40_000;
+const PRIMARY_MODEL = "gemini-flash-latest";
+const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * Prompt copied from the Python notebook's RECEIPT_PROMPT.
@@ -86,7 +88,7 @@ export class GeminiClient implements LLMClient {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = "gemini-flash-latest") {
+  constructor(apiKey: string, model = PRIMARY_MODEL) {
     this.apiKey = apiKey;
     this.model = model;
   }
@@ -111,17 +113,40 @@ export class GeminiClient implements LLMClient {
         },
       ],
       generationConfig: {
-        temperature: 0.1,
         responseMimeType: "application/json",
         responseSchema: RECEIPT_RESPONSE_SCHEMA,
       },
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const startedAt = Date.now();
+    let raw: string;
+    try {
+      raw = await this.callWithRetry(this.urlFor(this.model), body, RETRY_BUDGET_MS, 1);
+    } catch (err) {
+      // A 503 is model capacity, not an image or account problem. Try another
+      // stable model while there is still time in this function's retry budget.
+      if (!(err instanceof LLMError) || err.providerStatus !== 503 || this.model !== PRIMARY_MODEL) {
+        throw err;
+      }
 
-    const raw = await this.callWithRetry(url, body);
+      const remainingMs = RETRY_BUDGET_MS - (Date.now() - startedAt);
+      if (remainingMs <= 0) throw new LLMUnavailableError();
+
+      try {
+        raw = await this.callWithRetry(this.urlFor(FALLBACK_MODEL), body, remainingMs, 1);
+      } catch (fallbackErr) {
+        if (fallbackErr instanceof LLMError && fallbackErr.providerStatus === 503) {
+          throw new LLMUnavailableError();
+        }
+        throw fallbackErr;
+      }
+    }
 
     return this.parseResponse(raw);
+  }
+
+  private urlFor(model: string): string {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
   }
 
   /**
@@ -131,11 +156,16 @@ export class GeminiClient implements LLMClient {
    * than LLMError: it's the one failure here that clears on its own, and the
    * caller can only say so if it can tell it apart.
    */
-  private async callWithRetry(url: string, body: unknown): Promise<string> {
+  private async callWithRetry(
+    url: string,
+    body: unknown,
+    budgetMs: number,
+    maxRetries: number
+  ): Promise<string> {
     try {
       return await withRetry(
         () => this.callOnce(url, body),
-        { maxRetries: 2, baseDelayMs: 1000, budgetMs: RETRY_BUDGET_MS }
+        { maxRetries, baseDelayMs: 1000, budgetMs }
       );
     } catch (err) {
       if (isRateLimitError(err)) throw new RateLimitError(ERROR_MESSAGES.LLM_BUSY);
@@ -160,15 +190,19 @@ export class GeminiClient implements LLMClient {
 
       throw new LLMError(
         `Gemini API returned ${res.status}: ${errorText.slice(0, 300)}`,
-        isRetryable
+        isRetryable,
+        res.status
       );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = await res.json();
 
-    // Extract the text content from Gemini's response structure
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+    // Thinking-capable models may put a reasoning part before the final JSON.
+    const text = json?.candidates?.[0]?.content?.parts?.find(
+      (part: { thought?: boolean; text?: string }) =>
+        !part?.thought && typeof part?.text === "string" && part.text.length > 0
+    )?.text ?? null;
 
     if (!text) {
       // Check for blocked content (safety filters)
