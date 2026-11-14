@@ -1,5 +1,6 @@
 import type { LLMClient, LLMProvider } from "./types";
 import { GeminiClient } from "./gemini-client";
+import { OpenRouterClient } from "./openrouter-client";
 
 /**
  * Factory function — creates the appropriate LLM client based on the
@@ -14,18 +15,20 @@ export function createLLMClient(provider?: LLMProvider): LLMClient {
   const resolved: LLMProvider =
     provider ??
     (process.env.LLM_PROVIDER as LLMProvider | undefined) ??
-    "gemini";
+    "openrouter";
 
   switch (resolved) {
+    case "openrouter": {
+      return new OpenRouterClient(
+        requireEnv("OPENROUTER_API_KEY"),
+        modelsFromEnv("OPENROUTER_MODELS")
+      );
+    }
     case "gemini": {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey.trim() === "") {
-        throw new Error(
-          "GEMINI_API_KEY is not set. " +
-            "Add it to .env.local or set it as an environment variable."
-        );
-      }
-      return new GeminiClient(apiKey);
+      return new GeminiClient(
+        requireEnv("GEMINI_API_KEY"),
+        modelsFromEnv("GEMINI_MODELS")
+      );
     }
     // Future providers:
     // case "openai": return new OpenAIClient(process.env.OPENAI_API_KEY!);
@@ -35,10 +38,34 @@ export function createLLMClient(provider?: LLMProvider): LLMClient {
       const provider: string = resolved;
       throw new Error(
         `Unknown or unsupported LLM provider: "${provider}". ` +
-          "Supported: gemini. Set LLM_PROVIDER in .env.local"
+          "Supported: openrouter, gemini. Set LLM_PROVIDER in .env.local"
       );
     }
   }
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim() === "") {
+    throw new Error(
+      `${name} is not set. ` +
+        "Add it to .env.local or set it as an environment variable."
+    );
+  }
+  return value;
+}
+
+/**
+ * A comma-separated model list (OPENROUTER_MODELS, GEMINI_MODELS), tried in
+ * order, one per attempt. Unset or blank means the client's defaults — so a
+ * bad model can be swapped out from the environment without a code change.
+ */
+function modelsFromEnv(name: string): string[] | undefined {
+  const models = (process.env[name] ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return models.length > 0 ? models : undefined;
 }
 
 // Re-export for convenience

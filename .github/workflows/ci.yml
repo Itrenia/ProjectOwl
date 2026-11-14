@@ -36,7 +36,7 @@ jobs:
         run: npm run test:allocation
 
       - name: Test - Receipt Scan Recovery
-        run: npm run test:receipt-scan
+        run: npm run test:receipts
 
       - name: Lint (if available)
         run: npm run lint 2>/dev/null || echo "No lint script configured"

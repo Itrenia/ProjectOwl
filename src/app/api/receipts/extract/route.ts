@@ -8,8 +8,8 @@ import type { ExtractApiResponse } from "@/lib/schemas/receipt";
 
 /**
  * Vercel's ceiling for a Node.js function on Hobby; Pro allows more. The
- * Gemini's fetch deadline in gemini-client.ts is lower so the handler can
- * return a JSON error before the platform kills this function.
+ * per-attempt timeout and retry budget in lib/llm/receipt-extraction.ts are
+ * sized to fit inside this, so raise them together or not at all.
  */
 export const maxDuration = 60;
 

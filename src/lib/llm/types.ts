@@ -25,6 +25,6 @@ export interface LLMClient {
 
 /**
  * Supported LLM providers.
- * Defaults to "gemini" — set via LLM_PROVIDER env var.
+ * Defaults to "openrouter" — set via LLM_PROVIDER env var.
  */
-export type LLMProvider = "gemini" | "openai" | "anthropic";
+export type LLMProvider = "openrouter" | "gemini" | "openai" | "anthropic";
