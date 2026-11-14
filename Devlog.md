@@ -1,5 +1,22 @@
 # ProjectOwl — Devlog
 
+## 2026-11-15 — Merge master directly into production
+
+### Done
+- Resolved the overlap between production's receipt recovery (#88) and
+  master's OpenRouter implementation (#89) in favor of the latter, which
+  already preserves Gemini thought filtering and HTML 504 retry advice.
+- Removed the obsolete receipt-scan suite and duplicate error constants that
+  Git's automatic merge retained. Application and workflow files match master.
+- Removed promotion-flow enforcement and made the production shortcut use
+  master, so staging is optional. Preserved both branches' ancestry with a
+  merge commit instead of another squash promotion.
+
+### Verification
+- TypeScript passed; receipts 20/20, simplify 13/13, allocation 18/18,
+  security 35/35, settlement 10/10, service worker 4/4.
+- Production build and whitespace checks passed.
+
 ## 2026-11-14 — Receipt scan moves to DeepSeek V4.1 Flash via OpenRouter
 
 Follows the entry below. Gemini's flash model was the unreliable part, so the
