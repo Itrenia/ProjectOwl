@@ -48,7 +48,7 @@ The setup script will:
 1. Verify Node.js v18+
 2. Verify (or install) PostgreSQL 16 and create the `projectowl` database
 3. Install npm dependencies
-4. Create `.env.local` from `.env.example` (add your `GEMINI_API_KEY`) and set `DATABASE_URL`
+4. Create `.env.local` from `.env.example` (add your `OPENROUTER_API_KEY`, or `GEMINI_API_KEY` with `LLM_PROVIDER=gemini`) and set `DATABASE_URL`
 5. Apply database migrations (`npm run db:migrate`) and seed demo data (`npm run db:seed`)
 6. Run a build check
 
