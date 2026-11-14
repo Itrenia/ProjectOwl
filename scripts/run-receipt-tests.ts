@@ -309,3 +309,27 @@ test("a model id OpenRouter rejects does not stop the fallback being tried", asy
     receipt
   );
 });
+
+// ── Carried over from the earlier test:receipt-scan suite ───────────
+
+test("a Gemini reasoning part before the JSON is skipped", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      candidates: [{ content: { parts: [
+        { thought: true, text: "reasoning" },
+        { text: JSON.stringify(receipt) },
+      ] } }],
+    })
+  );
+  assert.deepEqual(await new GeminiClient("test-key").extractReceipt(input), receipt);
+});
+
+test("the platform's HTML 504 gives scan retry advice", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response("<html>Timed out</html>", { status: 504 }));
+  const result = await scanReceipt(new File(["receipt"], "receipt.jpg", { type: "image/jpeg" }));
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.failure.title, "That took too long");
+    assert.match(result.failure.message, /Try again/);
+  }
+});

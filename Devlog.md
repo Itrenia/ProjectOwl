@@ -49,6 +49,15 @@ selectable provider.
 - Accuracy on real phone photos (creased, angled, dim) is still untested, as
   is the scan through the app UI.
 
+### Merged over #85
+#85 (already in production) fixed the same symptoms differently: one 45s
+deadline across all attempts, a single 503-only fallback to
+`gemini-3.5-flash-lite`, and separate `LLMTimeoutError`/`LLM_TIMEOUT`. This
+supersedes it — per-attempt deadline, every retryable failure moves models —
+so its error classes and `test:receipt-scan` suite were dropped. Kept from it:
+skipping Gemini `thought` parts, no forced `temperature` for Gemini, and the
+client's advice on the platform's HTML 504. CI now runs `test:receipts`.
+
 ### To deploy
 Set `OPENROUTER_API_KEY` and `LLM_PROVIDER=openrouter` in Vercel and
 `.env.local` (local currently has `LLM_PROVIDER=gemini`, which still selects

@@ -87,7 +87,6 @@ export class GeminiClient implements LLMClient {
         },
       ],
       generationConfig: {
-        temperature: 0.1,
         responseMimeType: "application/json",
         responseSchema: RECEIPT_RESPONSE_SCHEMA,
       },
@@ -133,8 +132,11 @@ export class GeminiClient implements LLMClient {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = await res.json();
 
-    // Extract the text content from Gemini's response structure
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+    // Thinking-capable models may put a reasoning part before the final JSON.
+    const text = json?.candidates?.[0]?.content?.parts?.find(
+      (part: { thought?: boolean; text?: string }) =>
+        !part?.thought && typeof part?.text === "string" && part.text.length > 0
+    )?.text ?? null;
 
     if (!text) {
       // Check for blocked content (safety filters)

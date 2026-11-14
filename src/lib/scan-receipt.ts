@@ -109,6 +109,14 @@ export async function scanReceipt(file: File): Promise<ScanOutcome> {
     );
   }
 
+  // The platform's own timeout page, should a scan ever outlive maxDuration.
+  if (res.status === 504) {
+    return fail(
+      "That took too long",
+      serverMessage ?? "The scan didn't finish in time. Try again, or enter the expense manually."
+    );
+  }
+
   if (!res.ok || !json) {
     return fail(
       "Couldn't read that receipt",
