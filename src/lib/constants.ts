@@ -55,6 +55,7 @@ export const CODES = {
   LLM_FAILED: "LLM_FAILED",
   LLM_INVALID_RESPONSE: "LLM_INVALID_RESPONSE",
   LLM_RATE_LIMITED: "LLM_RATE_LIMITED",
+  LLM_UNAVAILABLE: "LLM_UNAVAILABLE",
   VALIDATION_FAILED: "VALIDATION_FAILED",
 } as const;
 
@@ -118,6 +119,7 @@ export const ERROR_MESSAGES = {
    * matches those and would rewrite this back to the generic wording.
    */
   LLM_BUSY: "Too many scans in the last minute. Wait about a minute, then try again.",
+  LLM_UNAVAILABLE: "Receipt scanning is temporarily busy. Try again shortly, or enter the expense manually.",
   LLM_NO_CONTENT: (reason: string) =>
     `Gemini returned no content (${reason}). The image may have been blocked by safety filters.`,
   LLM_INVALID_JSON: (preview: string) =>
@@ -209,13 +211,15 @@ export const MAPPED_ERRORS: { pattern: RegExp; message: string }[] = [
   //
   // Matches "returned 429" rather than a bare 429 so it can't fire on a
   // money amount like "$429.00" in an unrelated error.
-  { pattern: /returned 429|RESOURCE_EXHAUSTED|rate.?limit|quota/i,
+  { pattern: /returned 429|returned 402|RESOURCE_EXHAUSTED|rate.?limit|quota/i,
     message: "Receipt scanning is unavailable right now. Enter the expense manually, or try scanning again later." },
-  { pattern: /Gemini API returned/i,
+  { pattern: /(Gemini|OpenRouter) API returned 503\b|(Gemini|OpenRouter) API timed out/i,
+    message: ERROR_MESSAGES.LLM_UNAVAILABLE },
+  { pattern: /(Gemini|OpenRouter) API returned/i,
     message: "Failed to scan receipt. Please try again." },
-  { pattern: /Gemini returned no text|finishReason|blocked|safety filter/i,
+  { pattern: /(Gemini|OpenRouter) returned no text|finishReason|blocked|safety filter/i,
     message: "Receipt scan returned no data. The image may be invalid or blurry." },
-  { pattern: /GEMINI_API_KEY is not set/i,
+  { pattern: /(GEMINI|OPENROUTER)_API_KEY is not set/i,
     message: "Scan is unavailable. The API key has not been configured." },
   { pattern: /LLM_FAILED/i,
     message: "Failed to scan receipt. Please try again." },

@@ -1,43 +1,21 @@
 import type { LLMClient, ReceiptExtractionInput } from "./types";
+import type { ReceiptExtractionResult } from "@/lib/schemas/receipt";
+import { LLMError, LLMUnavailableError } from "@/lib/errors";
 import {
-  ReceiptExtractionResultSchema,
-  type ReceiptExtractionResult,
-} from "@/lib/schemas/receipt";
-import { isRateLimitError, withRetry } from "@/lib/retry";
-import { LLMError, RateLimitError, ValidationError } from "@/lib/errors";
-import { ERROR_MESSAGES } from "@/lib/constants";
-import { z } from "zod";
+  ATTEMPT_TIMEOUT_MS,
+  RECEIPT_PROMPT,
+  callWithFallback,
+  parseReceiptJson,
+} from "./receipt-extraction";
 
 /**
- * Wall-clock ceiling for the retry sequence.
- *
- * Sized to fit inside the extract route's `maxDuration = 60`, leaving headroom
- * for reading the upload, base64-encoding it, and the final Gemini call. The
- * two numbers are coupled: raising one without the other reintroduces the
- * mismatch where the function is killed mid-retry and the real error is lost.
+ * Models tried in order, one per attempt, wrapping around.
+ * Override with GEMINI_MODELS (comma-separated) — see lib/llm/index.ts.
  */
-const RETRY_BUDGET_MS = 40_000;
-
-/**
- * Prompt copied from the Python notebook's RECEIPT_PROMPT.
- *
- * Design philosophy: transcription-only — no calculation, no inference of
- * values not printed on the receipt. Business logic stays in the backend.
- */
-const RECEIPT_PROMPT = `
-You are transcribing a photo of a receipt. Extract exactly what is printed - do not
-calculate, infer, or estimate any value that is not directly shown on the receipt.
-
-Rules:
-- nm = item name, exactly as printed (keep original language, do not translate).
-- cnt = quantity. If not explicit, use 1.
-- price = the line's total price as printed (not unit price, not your own calculation).
-- subtotal_price, tax_price, service_price, discount_price, total_price are separate
-  fields - do not fold them into item prices.
-- If a field is not present on the receipt, omit it or return 0 - do not estimate or
-  back-calculate a value that isn't printed.
-- Do not invent items or amounts that aren't visibly on the receipt.
-`;
+export const DEFAULT_GEMINI_MODELS = [
+  "gemini-flash-lite-latest",
+  "gemini-flash-latest",
+];
 
 /**
  * JSON Schema for Gemini's structured output (response_schema).
@@ -77,25 +55,23 @@ const RECEIPT_RESPONSE_SCHEMA = {
  * response_schema and structured output parsing. The SDK's TypeScript types
  * may not fully support responseSchema yet.
  *
- * Endpoint: gemini-flash-latest — a Google-maintained alias for the current
- * recommended flash model, so this doesn't 404 for new API keys/projects
- * when a dated model version (e.g. gemini-2.5-flash) gets retired for them.
- * Pass a specific model name to the constructor to pin a version instead.
+ * Models default to Google-maintained `-latest` aliases, so this doesn't 404
+ * for new API keys/projects when a dated model version gets retired for them.
+ * Pass specific model names to the constructor to pin versions instead.
  */
 export class GeminiClient implements LLMClient {
   private apiKey: string;
-  private model: string;
+  private models: string[];
 
-  constructor(apiKey: string, model = "gemini-flash-latest") {
+  constructor(apiKey: string, models: string[] = DEFAULT_GEMINI_MODELS) {
+    if (models.length === 0) throw new Error("GeminiClient needs at least one model");
     this.apiKey = apiKey;
-    this.model = model;
+    this.models = models;
   }
 
   async extractReceipt(
     input: ReceiptExtractionInput
   ): Promise<ReceiptExtractionResult> {
-    const base64Image = input.imageBuffer.toString("base64");
-
     const body = {
       contents: [
         {
@@ -104,7 +80,7 @@ export class GeminiClient implements LLMClient {
             {
               inlineData: {
                 mimeType: input.mimeType,
-                data: base64Image,
+                data: input.imageBuffer.toString("base64"),
               },
             },
           ],
@@ -117,51 +93,41 @@ export class GeminiClient implements LLMClient {
       },
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const raw = await callWithFallback("Gemini", this.models, (model) =>
+      this.request(model, body)
+    );
 
-    const raw = await this.callWithRetry(url, body);
-
-    return this.parseResponse(raw);
+    return parseReceiptJson("Gemini", raw);
   }
 
-  /**
-   * The network call plus its retry policy.
-   *
-   * Exhausting the budget on a rate limit is reported as RateLimitError rather
-   * than LLMError: it's the one failure here that clears on its own, and the
-   * caller can only say so if it can tell it apart.
-   */
-  private async callWithRetry(url: string, body: unknown): Promise<string> {
-    try {
-      return await withRetry(
-        () => this.callOnce(url, body),
-        { maxRetries: 2, baseDelayMs: 1000, budgetMs: RETRY_BUDGET_MS }
-      );
-    } catch (err) {
-      if (isRateLimitError(err)) throw new RateLimitError(ERROR_MESSAGES.LLM_BUSY);
-      throw err;
-    }
-  }
-
-  private async callOnce(url: string, body: unknown): Promise<string> {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  private async request(model: string, body: unknown): Promise<string> {
+    // The key travels in a header, not the query string, so it can't end up
+    // in request logs or error messages that include the URL.
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": this.apiKey,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+      }
+    );
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "unknown");
+      const message = `Gemini API returned ${res.status}: ${errorText.slice(0, 300)} [${model}]`;
+      if (res.status === 503) {
+        throw new LLMUnavailableError(message);
+      }
       const isRetryable =
         res.status === 429 ||
-        res.status === 503 ||
         errorText.includes("RESOURCE_EXHAUSTED") ||
         errorText.includes("UNAVAILABLE");
 
-      throw new LLMError(
-        `Gemini API returned ${res.status}: ${errorText.slice(0, 300)}`,
-        isRetryable
-      );
+      throw new LLMError(message, isRetryable);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,34 +149,5 @@ export class GeminiClient implements LLMClient {
     }
 
     return text;
-  }
-
-  /**
-   * Parse and validate the LLM's JSON response.
-   * Separated so the retry wrapper only wraps the network call,
-   * not the parse/validate step.
-   */
-  private parseResponse(raw: string): ReceiptExtractionResult {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new LLMError(
-        `Gemini response was not valid JSON: ${raw.slice(0, 200)}`,
-        false
-      );
-    }
-
-    // Validate against our Zod schema
-    try {
-      return ReceiptExtractionResultSchema.parse(parsed);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        throw new ValidationError(
-          `Receipt extraction failed schema validation: ${err.message}`
-        );
-      }
-      throw new ValidationError("Receipt extraction returned unexpected data");
-    }
   }
 }

@@ -12,6 +12,7 @@
  * quota — or a request that was still running.
  */
 import { downscaleImage, MAX_UPLOAD_BYTES } from "@/lib/image";
+import { CODES, ERROR_MESSAGES } from "@/lib/constants";
 import type { ReceiptExtractionResult } from "@/lib/schemas/receipt";
 
 /**
@@ -93,7 +94,14 @@ export async function scanReceipt(file: File): Promise<ScanOutcome> {
   const json = await readJson(res);
   const serverMessage = typeof json?.error === "string" ? json.error : null;
 
-  // The one failure that clears on its own, so it gets its own advice.
+  // Provider capacity and per-minute scan limits need different advice.
+  if (res.status === 503 || json?.code === CODES.LLM_UNAVAILABLE) {
+    return fail(
+      "Receipt scanning is busy",
+      serverMessage ?? ERROR_MESSAGES.LLM_UNAVAILABLE
+    );
+  }
+
   if (res.status === 429 || json?.code === "LLM_RATE_LIMITED") {
     return fail(
       "Too many scans right now",

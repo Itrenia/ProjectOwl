@@ -24,6 +24,14 @@ export class LLMError extends AppError {
   }
 }
 
+/** Temporary provider overload, distinct from scan failures and user rate limits. */
+export class LLMUnavailableError extends AppError {
+  constructor(message: string) {
+    super(message, "LLM_UNAVAILABLE", 503, true);
+    this.name = "LLMUnavailableError";
+  }
+}
+
 /**
  * RateLimitError — the provider's per-minute rate limit is exhausted and our
  * retry budget ran out waiting for it to clear.
