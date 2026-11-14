@@ -126,6 +126,16 @@ How to trigger every error condition and what the user should see.
 
 ## LLM / Scan Errors
 
+### Temporary provider overload (503)
+
+| | |
+|---|---|
+| **How to trigger** | Run `npm run test:receipts` to replay persistent Gemini `503 UNAVAILABLE` responses without API calls |
+| **API status** | 503, code `LLM_UNAVAILABLE`, after up to two retries with exponential backoff |
+| **User sees** | *"Receipt scanning is busy"* — *"Receipt scanning is temporarily busy. Try again shortly, or enter the expense manually."* |
+| **Backend log** | `LLMUnavailableError` with the original Gemini status and error detail |
+| **Recovery** | Scanning succeeds if Gemini recovers during retries; persistent overload requires trying again later |
+
 ### 13. No API key configured
 
 | | |

@@ -1,5 +1,121 @@
 # ProjectOwl — Devlog
 
+## 2026-11-14 — Receipt scan moves to DeepSeek V4.1 Flash via OpenRouter
+
+Follows the entry below. Gemini's flash model was the unreliable part, so the
+default provider is now OpenRouter with DeepSeek V4.1 Flash; Gemini stays as a
+selectable provider.
+
+### Done
+- **`OpenRouterClient`** (`lib/llm/openrouter-client.ts`): OpenAI-compatible
+  chat completions, image as a base64 data URL, strict `json_schema` output,
+  `reasoning: { effort: "none" }`, `provider.require_parameters: true`.
+- **Default models: `deepseek/deepseek-v4.1-flash`, then
+  `google/gemini-3.5-flash-lite`.** Override with `OPENROUTER_MODELS`.
+- **`LLM_PROVIDER` now defaults to `openrouter`** and needs
+  `OPENROUTER_API_KEY`. `LLM_PROVIDER=gemini` keeps the old path.
+- **`lib/llm/receipt-extraction.ts`** holds what both providers share: the
+  prompt, the 15s-per-attempt / next-model retry policy, and JSON validation.
+  `GeminiClient` shrank to "make one call to one model".
+
+### Architecture decisions
+- **The fallback is a different vendor, not another DeepSeek model.** V4.1
+  Flash is the only DeepSeek model that accepts images (V4 Pro is text-only;
+  the other image-capable ids on OpenRouter are the same model under a dated
+  or retired name). OpenRouter already fails over between hosts of one model,
+  so a second DeepSeek id would fail for the same reasons as the first.
+- **A 200 is not success.** OpenRouter answers 200 once a host accepts the
+  request, so later failures arrive as `error` in the body or as empty
+  content. Both are treated as failures and retried on the next model.
+- **Strict schema means nothing is optional.** Every field is `required`, so
+  an unprinted tax or discount comes back as 0 rather than absent. The Zod
+  schema accepts that; `cnt` must be ≥ 1, which the prompt already asks for.
+- **OpenRouter over DeepSeek direct** for the fallback, not the price: both
+  come to about $0.001 a scan or less, and OpenRouter's top-up fee outweighs
+  its cheaper hosts at this volume.
+
+### Verification
+- `npm run test:receipts` 18/18 (9 new for OpenRouter), `test:security`
+  35/35, `tsc --noEmit` clean.
+- Live, through the real `OpenRouterClient`, on a synthetic 15-item receipt:
+  DeepSeek 4/4 in 2.8–5.9s with every item and total correct, at
+  $0.0003–0.0006 a scan; the Gemini fallback 2/2 in 6–7s at ~$0.0019, with
+  one item of 15 misread in one run; an invalid primary id fell through to the
+  next model.
+- **The live run caught what the mocks couldn't:** Gemini 3.5 Flash-Lite
+  rejects `reasoning: { effort: "none" }` with a 400, so the fallback was dead
+  on arrival. A model that refuses is now asked again without the field, and
+  400/404 move on to the next model instead of ending the scan.
+- Accuracy on real phone photos (creased, angled, dim) is still untested, as
+  is the scan through the app UI.
+
+### Merged over #85
+#85 (already in production) fixed the same symptoms differently: one 45s
+deadline across all attempts, a single 503-only fallback to
+`gemini-3.5-flash-lite`, and separate `LLMTimeoutError`/`LLM_TIMEOUT`. This
+supersedes it — per-attempt deadline, every retryable failure moves models —
+so its error classes and `test:receipt-scan` suite were dropped. Kept from it:
+skipping Gemini `thought` parts, no forced `temperature` for Gemini, and the
+client's advice on the platform's HTML 504. CI now runs `test:receipts`.
+
+### To deploy
+Set `OPENROUTER_API_KEY` and `LLM_PROVIDER=openrouter` in Vercel and
+`.env.local` (local currently has `LLM_PROVIDER=gemini`, which still selects
+Gemini).
+
+## 2026-11-14 — Receipt scan: a hung Gemini call was never retried
+
+Reported as scans being inconsistent — either a timeout or "service busy".
+
+### Measured, not assumed
+Called Gemini directly with the local key, same prompt shape and schema, on a
+synthetic 15-item receipt:
+
+- `gemini-flash-latest` (the only model we used): **0 of 7** — six calls gave
+  no response at all within 25–90s, one returned 503 "high demand".
+- `gemini-flash-lite-latest`: **5 of 6** in 2.7–7s, all 15 items correct.
+
+Small sample, one afternoon, one key, a clean synthetic image. Vercel's runtime
+logs were not read (dashboard sign-in needed), so production is inferred.
+
+### Fixed
+- **Every Gemini call now has a 15s deadline.** The server-side `fetch` had no
+  `AbortSignal`, so a call Gemini accepted and never answered did not throw.
+  `withRetry` only reacts to a thrown error, so it never ran, the 40s budget
+  never applied, and the function sat until `maxDuration = 60` killed it. The
+  August fix bounded the *sleeps* between attempts; nothing bounded an attempt.
+  A timeout is reported as `LLMUnavailableError` (503, retryable).
+- **A retry goes to the next model, not the same one.** `GeminiClient` takes a
+  list and uses one per attempt, wrapping around. Asking an overloaded model
+  again 1s later returned "busy" three times in a row.
+- **Default order is flash-lite, then flash**, overridable with `GEMINI_MODELS`
+  (comma-separated) so a bad model can be swapped without a deploy.
+- **The API key moved from the query string to `x-goog-api-key`**, so it can't
+  land in logs or error text that include the URL.
+
+### Architecture decisions
+- **`ATTEMPT_TIMEOUT_MS`, `RETRY_BUDGET_MS` and `maxDuration` are now a
+  three-way coupling.** Worst case is 15 + 1 + 15 + 2 + 15 ≈ 48s inside 60s.
+  Raise the attempt timeout and the third attempt stops fitting.
+- **Timeouts reuse `LLMUnavailableError`** rather than getting their own type:
+  to the user a hung provider and an overloaded one need the same advice.
+
+### Verification
+- `npm run test:receipts` 9/9 (4 new: fallback on 503, fallback on timeout,
+  all-models-timeout surfaces as unavailable, deadline + key-not-in-URL).
+  `tsc --noEmit` clean.
+- Live, through the real `GeminiClient`: defaults 3/3 in 5.4–6.6s; with flash
+  forced first, 2/2 recovered in ~22s (flash timed out at 15s → lite 200).
+
+### Known / not done
+- Flash-lite's accuracy on real phone photos (creased, angled, dim) is
+  untested. If it misreads, set `GEMINI_MODELS=gemini-flash-latest,gemini-flash-lite-latest`.
+- A daily-quota 429 still fails fast without trying the other model, and a
+  per-minute 429 still sleeps ~13s before switching — `withRetry` decides
+  both, and each model has its own quota, so neither wait is needed.
+- Whether the key is on the free tier was not checked; free-tier capacity
+  would explain both the hangs and the 503s.
+
 ## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
 
 A round of visual and interaction work off the back of reference screens the

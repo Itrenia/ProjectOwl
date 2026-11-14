@@ -6,7 +6,7 @@ on:
       title:
         description: 'PR title'
         required: false
-        default: 'chore: promote staging to production'
+        default: 'chore: promote master to production'
 
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          EXISTING=$(gh pr list --repo "${{ github.repository }}" --base production --head staging --state open --json url --jq '.[0].url // empty')
+          EXISTING=$(gh pr list --repo "${{ github.repository }}" --base production --head master --state open --json url --jq '.[0].url // empty')
           if [ -n "$EXISTING" ]; then
             echo "A promotion PR is already open: $EXISTING"
             exit 0
@@ -31,13 +31,13 @@ jobs:
           gh pr create \
             --repo "${{ github.repository }}" \
             --base production \
-            --head staging \
+            --head master \
             --title "${{ github.event.inputs.title }}" \
-            --body "Automated promotion from staging to production.
+            --body "Automated promotion from master to production.
 
           ⚠️ **Please review carefully before merging to production.**
-          - Verify all staging tests passed
-          - Confirm no regressions in staging
+          - Verify all CI checks passed
+          - Review the changes for regressions
           - Check Vercel preview is stable
 
           Merge only when ready to deploy to production."
