@@ -5,6 +5,7 @@
  * A provider client only has to know how to make one HTTP call to one model.
  */
 import {
+  MenuItemSchema,
   ReceiptExtractionResultSchema,
   type ReceiptExtractionResult,
 } from "@/lib/schemas/receipt";
@@ -49,10 +50,19 @@ Rules:
 - price = the line's total price as printed (not unit price, not your own calculation).
 - subtotal_price, tax_price, service_price, discount_price, total_price are separate
   fields - do not fold them into item prices.
+- Discount, voucher and credit rows are deductions, not purchased menu items.
+  Put them in discount_price; do not repeat them in menu.
 - If a field is not present on the receipt, omit it or return 0 - do not estimate or
   back-calculate a value that isn't printed.
 - Do not invent items or amounts that aren't visibly on the receipt.
 `;
+
+// The provider transcribes signed deductions. The application schema remains
+// nonnegative: deductions become a receipt-wide discount before reaching the UI.
+const TranscribedReceiptSchema = ReceiptExtractionResultSchema.extend({
+  menu: z.array(MenuItemSchema.extend({ price: z.number().finite() })).min(1),
+  discount_price: z.number().finite().transform(Math.abs).optional(),
+});
 
 /**
  * Run `callModel` under the shared retry policy.
@@ -114,22 +124,24 @@ export function parseReceiptJson(provider: string, raw: string): ReceiptExtracti
     );
   }
 
-  // Receipts often print discounts as deductions (e.g. -1.14). The app
-  // stores a positive magnitude and subtracts it when allocating the bill.
-  // Normalize only numeric discounts; leave other invalid data to validation.
-  if (
-    parsed !== null &&
-    typeof parsed === "object" &&
-    !Array.isArray(parsed) &&
-    "discount_price" in parsed &&
-    typeof parsed.discount_price === "number" &&
-    Number.isFinite(parsed.discount_price)
-  ) {
-    parsed = { ...parsed, discount_price: Math.abs(parsed.discount_price) };
-  }
-
   try {
-    return ReceiptExtractionResultSchema.parse(parsed);
+    const transcribed = TranscribedReceiptSchema.parse(parsed);
+    const deductions = transcribed.menu.filter((item) => item.price < 0);
+    if (deductions.length === 0) {
+      return ReceiptExtractionResultSchema.parse(transcribed);
+    }
+
+    const rowDiscount = Math.round(
+      deductions.reduce((sum, item) => sum - item.price, 0) * 100
+    ) / 100;
+    return ReceiptExtractionResultSchema.parse({
+      ...transcribed,
+      menu: transcribed.menu.filter((item) => item.price >= 0),
+      // The summary can repeat the deductions or include further discounts.
+      // Keep the larger printed amount instead of counting the same credit twice.
+      // Allocation reconciles inconsistent components against the printed total.
+      discount_price: Math.max(transcribed.discount_price ?? 0, rowDiscount),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new ValidationError(
