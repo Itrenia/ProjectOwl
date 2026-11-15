@@ -1,5 +1,21 @@
 # ProjectOwl — Devlog
 
+## 2026-11-15 — Accept printed negative receipt discounts
+
+### Fixed
+- A valid Secret Recipe receipt printed its card discount as `-1.14`. Both
+  providers transcribe printed amounts, but the app's schema requires discount
+  magnitudes, causing `VALIDATION_FAILED` before the scan could be reviewed.
+- Normalize finite numeric discounts to their absolute value at the shared
+  extraction boundary, before validation. The stored discount remains positive
+  because allocation subtracts it. Other fields retain their validation rules.
+
+### Verification
+- Reproduced the exact negative-discount validation error before the fix.
+- Added coverage through both provider clients using the receipt's printed
+  values, sign and malformed-value cases, and allocation subtracting once.
+- Receipt tests 23/23, allocation tests 18/18, and TypeScript checks passed.
+
 ## 2026-11-15 — Merge master directly into production
 
 ### Done
