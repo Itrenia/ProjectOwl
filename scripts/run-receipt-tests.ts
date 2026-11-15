@@ -208,6 +208,46 @@ test("discount sign normalization keeps valid amounts and rejects other malforme
   assert.throws(() => parseReceiptJson("test", JSON.stringify({ ...receipt, menu: [{ nm: "Tea", price: -2 }] })), { code: "VALIDATION_FAILED" });
 });
 
+test("both providers move negative menu deductions into discount without duplicating the summary", async (t) => {
+  const items = [{ nm: "CHOC BANANA(S)", price: 5.50 }, { nm: "ICED MOCHA", price: 5.90 }];
+  let payload: object;
+  t.mock.method(globalThis, "fetch", async (url: unknown) =>
+    String(url).includes("openrouter.ai")
+      ? completion(JSON.stringify(payload))
+      : Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }] })
+  );
+  for (const discount of [undefined, 0, -1.14, 1.14]) {
+    payload = {
+      menu: [...items, { nm: "10%-SR CARD", price: -1.14 }],
+      subtotal_price: 10.26, service_price: 1.03, tax_price: 0.79,
+      discount_price: discount, total_price: 12,
+    };
+    for (const client of [new OpenRouterClient("test-key"), new GeminiClient("test-key")]) {
+      const extracted = await client.extractReceipt(input);
+      assert.deepEqual(extracted.menu, items);
+      assert.equal(extracted.discount_price, 1.14);
+      // The receipt's printed components differ by 8 cents. Existing allocation
+      // reconciliation must still honor the printed total after normalization.
+      assert.equal(11.4 + netAdjustment(deriveScannedAdjustments(extracted), 11.4), 12);
+    }
+  }
+});
+
+test("multiple deduction rows are combined once and malformed rows still fail", () => {
+  for (const summary of [undefined, 0, 1, 1.5]) {
+    const extracted = parseReceiptJson("test", JSON.stringify({
+      menu: [{ nm: "Tea", price: 10 }, { nm: "Voucher", price: -1 }, { nm: "Credit", price: -0.5 }],
+      discount_price: summary, total_price: 8.5,
+    }));
+    assert.equal(extracted.discount_price, 1.5);
+    assert.equal(extracted.menu.length, 1);
+    assert.equal(10 + netAdjustment(deriveScannedAdjustments(extracted), 10), 8.5);
+  }
+  for (const row of [{ nm: "Credit", price: "-1" }, { nm: "", price: -1 }, { nm: "Credit", price: -1, cnt: 0 }]) {
+    assert.throws(() => parseReceiptJson("test", JSON.stringify({ ...receipt, menu: [...receipt.menu, row] })), { code: "VALIDATION_FAILED" });
+  }
+});
+
 test("a normalized discount is subtracted once when prefilling an allocation", () => {
   const extracted = parseReceiptJson("test", JSON.stringify({
     menu: [{ nm: "Tea", price: 10 }], subtotal_price: 9, discount_price: -1, tax_price: 0.9, total_price: 9.9,
