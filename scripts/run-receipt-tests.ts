@@ -5,6 +5,8 @@ import { OpenRouterClient } from "../src/lib/llm/openrouter-client";
 import { AppError } from "../src/lib/errors";
 import { apiError, mapErrorMessage } from "../src/lib/constants";
 import { scanReceipt } from "../src/lib/scan-receipt";
+import { parseReceiptJson } from "../src/lib/llm/receipt-extraction";
+import { deriveScannedAdjustments, netAdjustment } from "../src/lib/adjustments";
 
 const input = { imageBuffer: Buffer.from("receipt"), mimeType: "image/jpeg" };
 const receipt = { menu: [{ nm: "Tea", price: 2 }], total_price: 2 };
@@ -172,6 +174,49 @@ test("every Gemini call carries a deadline, and the key stays out of the URL", a
 const completion = (content: string) =>
   Response.json({ choices: [{ message: { content }, finish_reason: "stop" }] });
 const sentBody = (init?: RequestInit) => JSON.parse(String(init?.body));
+
+test("both providers accept the printed negative discount on the Secret Recipe receipt", async (t) => {
+  const printedReceipt = {
+    menu: [{ nm: "CHOC BANANA(S)", cnt: 1, price: 5.50 }, { nm: "ICED MOCHA", cnt: 1, price: 5.90 }],
+    subtotal_price: 10.26,
+    discount_price: -1.14,
+    service_price: 1.03,
+    tax_price: 0.79,
+    total_price: 12,
+  };
+  t.mock.method(globalThis, "fetch", async (url: unknown) =>
+    String(url).includes("openrouter.ai")
+      ? completion(JSON.stringify(printedReceipt))
+      : Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(printedReceipt) }] } }] })
+  );
+  for (const client of [new OpenRouterClient("test-key"), new GeminiClient("test-key")]) {
+    assert.deepEqual(await client.extractReceipt(input), { ...printedReceipt, discount_price: 1.14 });
+  }
+});
+
+test("discount sign normalization keeps valid amounts and rejects other malformed values", () => {
+  for (const amount of [-1.14, 1.14, 0]) {
+    assert.equal(parseReceiptJson("test", JSON.stringify({ ...receipt, discount_price: amount })).discount_price, Math.abs(amount));
+  }
+  assert.deepEqual(parseReceiptJson("test", JSON.stringify(receipt)), receipt);
+  for (const invalid of ["-1.14", null, true, {}, []]) {
+    assert.throws(() => parseReceiptJson("test", JSON.stringify({ ...receipt, discount_price: invalid })), { code: "VALIDATION_FAILED" });
+  }
+  for (const field of ["subtotal_price", "tax_price", "service_price", "total_price"]) {
+    assert.throws(() => parseReceiptJson("test", JSON.stringify({ ...receipt, [field]: -1 })), { code: "VALIDATION_FAILED" });
+  }
+  assert.throws(() => parseReceiptJson("test", JSON.stringify({ ...receipt, menu: [{ nm: "Tea", price: -2 }] })), { code: "VALIDATION_FAILED" });
+});
+
+test("a normalized discount is subtracted once when prefilling an allocation", () => {
+  const extracted = parseReceiptJson("test", JSON.stringify({
+    menu: [{ nm: "Tea", price: 10 }], subtotal_price: 9, discount_price: -1, tax_price: 0.9, total_price: 9.9,
+  }));
+  const adjustments = deriveScannedAdjustments(extracted);
+  assert.equal(adjustments.discount.value, 1);
+  assert.equal(adjustments.tax.value, 0.9);
+  assert.equal(10 + netAdjustment(adjustments, 10), 9.9);
+});
 
 test("OpenRouter sends the image, a strict schema and a deadline, with the key in a header", async (t) => {
   let seenUrl = "";
