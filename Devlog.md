@@ -1,5 +1,25 @@
 # ProjectOwl — Devlog
 
+## 2026-11-15 — Normalize discount rows returned as menu items
+
+### Fixed
+- Confirmed the previous discount-field fix is deployed at production commit
+  `fc2f4a5`. A second scan exposed a different representation: the model placed
+  the negative card-discount amount in `menu[2].price`.
+- Validate provider transcriptions with signed item amounts, then move negative
+  rows into the receipt-wide discount. Keep the larger of the summed deduction
+  rows and summary discount, since the summary may repeat or include those rows.
+  The final application schema still requires nonnegative items and at least one
+  purchased item; malformed rows fail validation before any rows are removed.
+- Clarified the shared prompt to keep deductions out of purchased menu items.
+  Existing allocation reconciliation handles inconsistent printed components.
+
+### Verification
+- Reproduced the exact `menu[2].price` validation error before the fix.
+- Provider tests cover missing, zero, positive and negative discount summaries,
+  duplicate deductions, multiple credits, malformed rows and the printed total.
+- Receipt tests 25/25, allocation tests 18/18, TypeScript and whitespace checks passed.
+
 ## 2026-11-15 — Accept printed negative receipt discounts
 
 ### Fixed
