@@ -114,6 +114,20 @@ export function parseReceiptJson(provider: string, raw: string): ReceiptExtracti
     );
   }
 
+  // Receipts often print discounts as deductions (e.g. -1.14). The app
+  // stores a positive magnitude and subtracts it when allocating the bill.
+  // Normalize only numeric discounts; leave other invalid data to validation.
+  if (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    "discount_price" in parsed &&
+    typeof parsed.discount_price === "number" &&
+    Number.isFinite(parsed.discount_price)
+  ) {
+    parsed = { ...parsed, discount_price: Math.abs(parsed.discount_price) };
+  }
+
   try {
     return ReceiptExtractionResultSchema.parse(parsed);
   } catch (err) {
