@@ -30,6 +30,18 @@ export function setDraftDirty(next: boolean): void {
   dirty = next;
 }
 
+/**
+ * Is there work that leaving would throw away?
+ *
+ * For exits that can't be expressed as a navigation the guard could hold —
+ * signing out tears down the session itself, so there's nothing to resume if
+ * the user says no. Those callers ask first and word their own prompt around
+ * the answer, rather than routing through guardedNavigate.
+ */
+export function isDraftDirty(): boolean {
+  return dirty;
+}
+
 /** Subscribe to "a navigation is waiting on the user's answer". */
 export function subscribeDraftGuard(listener: Listener): () => void {
   listeners.push(listener);

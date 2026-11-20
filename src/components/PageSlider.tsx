@@ -237,7 +237,7 @@ export default function PageSlider() {
               width: "100%",
               height: "100%",
               position: "relative",
-              paddingTop: "calc(4rem + var(--offline-banner-h))",
+              paddingTop: "calc(var(--top-clearance) + var(--offline-banner-h))",
               paddingBottom: "var(--nav-clearance)",
               overflowY: "auto",
             }}

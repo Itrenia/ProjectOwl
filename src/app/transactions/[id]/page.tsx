@@ -52,7 +52,10 @@ export default function TransactionDetailPage() {
       });
       const json = await response.json();
       if (json.success) {
-        router.push("/transactions");
+        // Land somewhere that still exists: the group ledger the expense
+        // belongs to, or home for non-group transactions. replace() so Back
+        // never returns to the deleted record's now-404 detail route.
+        router.replace(tx?.groupId ? `/groups/${tx.groupId}` : "/");
         return;
       }
       setDialogError({
@@ -66,11 +69,11 @@ export default function TransactionDetailPage() {
       });
     }
     setShowDeleteDialog(false);
-  }, [params.id, router]);
+  }, [params.id, router, tx]);
 
   if (loading) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-full flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
       </main>
     );
@@ -78,7 +81,7 @@ export default function TransactionDetailPage() {
 
   if (!tx) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-negative">{error || "Transaction not found"}</p>
         {error && (
           <button
@@ -112,7 +115,7 @@ export default function TransactionDetailPage() {
     !isPayer && !isPayment && tx.userShare > 0 && splitAcrossPayers;
 
   return (
-    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
+    <main className="min-h-full px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav">
       {/* Back */}
       <button
         onClick={() => router.back()}

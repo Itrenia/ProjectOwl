@@ -120,7 +120,7 @@ export default function GroupDetailPage() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
@@ -128,7 +128,7 @@ export default function GroupDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-full flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
       </main>
     );
@@ -136,7 +136,7 @@ export default function GroupDetailPage() {
 
   if (!group) {
     return (
-      <main className="min-h-dvh flex flex-col items-center justify-center p-4 gap-3">
+      <main className="min-h-full flex flex-col items-center justify-center p-4 gap-3">
         <p className="text-sm text-ink-muted">{error || "Group not found"}</p>
         <Link href="/groups" className="text-sm font-medium text-[var(--primary)]">
           ← Back to groups
@@ -148,7 +148,7 @@ export default function GroupDetailPage() {
   return (
     <main
       ref={mainRef}
-      className="min-h-dvh px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav"
+      className="min-h-full px-4 pt-6 max-w-lg mx-auto animate-slide-in-right content-with-floating-nav"
     >
       <Link href="/groups" className="text-sm text-ink-muted hover:text-ink mb-4 block">
         ← Groups

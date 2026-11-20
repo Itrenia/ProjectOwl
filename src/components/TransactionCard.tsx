@@ -122,10 +122,12 @@ export default function TransactionCard({
               : "var(--color-negative)",
           }}
         >
-          {youPaid ? "+" : ""}${userShare.toFixed(2)}
+          {youPaid
+            ? `+$${(totalAmount - userShare).toFixed(2)}`
+            : `$${userShare.toFixed(2)}`}
         </p>
         <p className="text-caption text-ink-muted">
-          {youPaid ? "your payment" : "your share"}
+          {youPaid ? "you lent" : "you owe"}
         </p>
       </div>
     </Link>

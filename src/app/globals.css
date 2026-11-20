@@ -264,12 +264,22 @@ body {
    apart when the island's height changes. */
 :root {
   --nav-clearance: calc(64px + 1.5rem + 1rem + env(safe-area-inset-bottom, 0px));
+
+  /* Top clearance. There is no app header any more, so this is only the
+     status bar plus a little air — but it still has to exist: the PWA runs
+     `black-translucent`, which puts the web view *under* the status bar, and
+     the offline banner overlays the same edge when it appears. The header
+     used to cover both incidentally with its 64px.
+
+     Read by .content-with-nav and by PageSlider's scroll panes, same as
+     --nav-clearance, so the two can't drift apart. */
+  --top-clearance: calc(env(safe-area-inset-top, 0px) + 0.75rem);
 }
 
-/* Clear the fixed top header and the nav island, so page content is never
-   hidden behind them. */
+/* Clear the status bar and the nav island, so page content is never hidden
+   behind them. */
 .content-with-nav {
-  padding-top: calc(4rem + var(--offline-banner-h));
+  padding-top: calc(var(--top-clearance) + var(--offline-banner-h));
   padding-bottom: var(--nav-clearance);
 }
 
@@ -661,7 +671,9 @@ main {
 /* Page slider container styles */
 .page-slider-container main {
   height: 100%;
-  min-height: 100vh;
+  /* No min-height here: the pane is already shorter than the viewport (it
+     clears the status bar and the nav island), so forcing a min-height of
+     100vh made every page rubber-scroll even when its content fit (#67). */
 }
 
 .page-slider-container {
@@ -844,5 +856,9 @@ main {
    settle-up, transaction detail). Same island clearance plus room for the
    FAB itself. */
 .content-with-floating-nav {
-  padding-bottom: calc(var(--nav-clearance) + 4.5rem);
+  /* Only the extra room above the nav island for the page's floating action
+     button. The nav clearance itself is already owned by the surrounding
+     container (.content-with-nav wrapper or PageSlider's pane) — padding it
+     in again here doubled ~122px onto every detail page (#67). */
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
 }

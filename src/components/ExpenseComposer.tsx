@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import { deriveScannedAdjustments, ZERO_ADJUSTMENTS } from "@/lib/adjustments";
@@ -257,6 +257,12 @@ export default function ExpenseComposer() {
   };
 
   // ── Scan ──────────────────────────────────────────────────────────
+  // A scan is cancellable: bumping scanRun invalidates whatever is in flight,
+  // so a late response (or a late mock timer) is silently dropped instead of
+  // yanking the user into the assignment flow after they backed out (#69).
+  const scanRun = useRef(0);
+  const mockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const applyScan = (data: any) => {
     setScanResult(data);
     setAmount(data.total_price || 0);
@@ -269,9 +275,11 @@ export default function ExpenseComposer() {
   };
 
   const handleScan = async (file: File) => {
+    const run = ++scanRun.current;
     setScanning(true);
     try {
       const outcome = await scanReceipt(file);
+      if (scanRun.current !== run) return; // cancelled — drop the result
       if (outcome.ok) {
         applyScan(outcome.data);
       } else {
@@ -285,14 +293,27 @@ export default function ExpenseComposer() {
       // scanReceipt() reports failures rather than throwing, but keep this in
       // `finally` regardless: anything that escapes must still clear the
       // loader, or the user is stuck on a spinner with no way back.
-      setScanning(false);
+      if (scanRun.current === run) setScanning(false);
     }
+  };
+
+  /** Abandon an in-flight scan and return to the form. */
+  const handleCancelScan = () => {
+    scanRun.current++;
+    if (mockTimer.current) {
+      clearTimeout(mockTimer.current);
+      mockTimer.current = null;
+    }
+    setScanning(false);
   };
 
   /** Test mode: skip the LLM and load a canned receipt. */
   const handleMockScan = () => {
+    const run = ++scanRun.current;
     setScanning(true);
-    setTimeout(() => {
+    mockTimer.current = setTimeout(() => {
+      mockTimer.current = null;
+      if (scanRun.current !== run) return; // cancelled — drop the result
       applyScan(MOCK_RECEIPTS[0].data);
       setScanning(false);
     }, 1400);
@@ -356,13 +377,13 @@ export default function ExpenseComposer() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-body text-ink-muted">Sign in to add an expense.</p>
       </main>
     );
   }
 
-  if (scanning) return <ScanLoader />;
+  if (scanning) return <ScanLoader onCancel={handleCancelScan} />;
 
   // ── Overlays ──────────────────────────────────────────────────────
   if (overlay === "payer") {
@@ -498,7 +519,7 @@ export default function ExpenseComposer() {
 
   // ── Compose ───────────────────────────────────────────────────────
   return (
-    <main className="min-h-dvh px-4 max-w-lg mx-auto content-with-floating-nav">
+    <main className="min-h-full px-4 max-w-lg mx-auto content-with-floating-nav">
       {/* Header. Title centred between two actions of unequal weight —
           Cancel is plain text, Save is the filled pill. */}
       <div

@@ -80,7 +80,7 @@ export default function SettleUpPage() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
@@ -88,7 +88,7 @@ export default function SettleUpPage() {
 
   if (loading) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-full flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
       </main>
     );
@@ -108,7 +108,7 @@ export default function SettleUpPage() {
   const owedToYou = balance?.perPerson?.filter((p: any) => p.amount > 0) ?? [];
 
   return (
-    <main className="min-h-dvh px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
+    <main className="min-h-full px-4 pt-6 max-w-lg mx-auto content-with-floating-nav">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-ink">Settle Up</h1>

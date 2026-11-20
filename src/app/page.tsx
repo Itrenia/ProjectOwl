@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import UserAvatar from "@/components/UserAvatar";
+import AccountButton from "@/components/AccountButton";
 import GroupPickerWheel from "@/components/GroupPickerWheel";
 import PullToRefresh from "@/components/PullToRefresh";
 import PaidStamp from "@/components/PaidStamp";
@@ -73,7 +73,7 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-full flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-[var(--border)] border-t-[var(--primary)] rounded-full" />
       </main>
     );
@@ -87,13 +87,15 @@ export default function HomePage() {
 
   return (
     <PullToRefresh onRefresh={() => loadData(user)}>
-    <main className="min-h-dvh px-4 pt-2 pb-24 max-w-lg mx-auto">
-      {/* Greeting */}
+    <main className="min-h-full px-4 pt-2 max-w-lg mx-auto">
+      {/* Greeting. The avatar was decoration; now it's the way into the
+          account, which is the only place Sign out lives since the app
+          header was removed. */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-ink-muted">Hello, {user.name}</h1>
         </div>
-        <UserAvatar name={user.name} size="md" />
+        <AccountButton user={user} />
       </div>
 
       {/* Error banner */}

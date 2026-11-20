@@ -22,7 +22,15 @@ const STAGES = [
   "Adding everything up…",
 ];
 
-export default function ScanLoader({ done = false }: { done?: boolean }) {
+export default function ScanLoader({
+  done = false,
+  onCancel,
+}: {
+  done?: boolean;
+  /** When set, a Cancel control renders — a scan must never be a dead end
+      the user is committed to until the request resolves (#69). */
+  onCancel?: () => void;
+}) {
   const [stage, setStage] = useState(0);
 
 
@@ -66,6 +74,19 @@ export default function ScanLoader({ done = false }: { done?: boolean }) {
           {done ? "Here's what was on the receipt" : STAGES[stage]}
         </p>
       </div>
+
+      {onCancel && !done && (
+        <button
+          onClick={onCancel}
+          className="pressable px-6 py-2.5 rounded-full text-callout font-semibold text-white"
+          style={{
+            border: "1px solid rgba(255,255,255,0.4)",
+            minHeight: 44,
+          }}
+        >
+          Cancel
+        </button>
+      )}
     </div>
     </Portal>
   );

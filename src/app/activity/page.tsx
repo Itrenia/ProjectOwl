@@ -46,7 +46,7 @@ export default function ActivityPage() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
@@ -54,7 +54,7 @@ export default function ActivityPage() {
 
   return (
     <PullToRefresh onRefresh={() => loadData(user)}>
-    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+    <main className="min-h-full px-4 pt-6 max-w-lg mx-auto">
       <h1 className="text-title1 font-bold text-ink mb-5">Activity</h1>
 
       {/* Error banner */}

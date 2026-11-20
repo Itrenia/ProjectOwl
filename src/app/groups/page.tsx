@@ -266,7 +266,7 @@ export default function GroupsPage() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
@@ -274,13 +274,15 @@ export default function GroupsPage() {
 
   return (
     <PullToRefresh onRefresh={() => loadData(user)}>
-    <main className="min-h-dvh px-4 pt-6 pb-24 max-w-lg mx-auto">
+    <main className="min-h-full px-4 pt-6 max-w-lg mx-auto">
       {/* The full balance card lives on Home; repeating it here pushed the
           groups themselves below the fold. One line carries the same net. */}
       <div className="flex items-start justify-between gap-3 mb-6">
         <div className="min-w-0">
           <h1 className="text-title1 font-bold text-ink">Your groups</h1>
-          {balance && (
+          {/* Scoped to browsing: the all-groups net says nothing about the
+              group being created, so it hides while the form is open (#63). */}
+          {balance && !showCreate && (
             <p className="text-subhead text-ink-muted mt-0.5">
               Net across all groups{" "}
               <span

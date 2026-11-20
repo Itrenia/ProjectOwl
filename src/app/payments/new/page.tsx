@@ -159,7 +159,7 @@ export default function NewPaymentPage() {
 
   if (!user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center p-4">
+      <main className="min-h-full flex items-center justify-center p-4">
         <p className="text-sm text-ink-muted">Please select a user from the home page first.</p>
       </main>
     );
@@ -185,7 +185,7 @@ export default function NewPaymentPage() {
 
   return (
     <main
-      className={`min-h-dvh px-4 pt-6 max-w-lg mx-auto transition-all duration-700 ease-out content-with-floating-nav ${
+      className={`min-h-full px-4 pt-6 max-w-lg mx-auto transition-all duration-700 ease-out content-with-floating-nav ${
         isMounted ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
       }`}
     >

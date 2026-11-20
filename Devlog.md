@@ -1,5 +1,158 @@
 # ProjectOwl — Devlog
 
+## 2026-11-16 — Bug sweep: eight of the Aug 28 feedback issues closed
+
+A pass over the reported bugs (#62–#71, #78), fixing what was still broken
+and verifying the rest against the current code.
+
+### Fixed
+- **Deleting an expense landed on a page that doesn't exist** (#64, #71).
+  The detail page's delete pushed `/transactions` — a legacy list route
+  nothing links to and that isn't in the tab set, so it read as a random
+  page; and because it was a push, Back returned to the deleted record's
+  now-404 detail route ("transaction not found"). Delete now replaces to
+  the expense's group ledger (`tx.groupId`), or home for non-group
+  transactions, and `replace()` keeps the dead route out of history.
+- **Expense rows showed your own share as if it were money out** (#65).
+  `TransactionCard`'s expense branch rendered `userShare` for everyone: pay
+  a $250 expense with a $183 share and the row showed a green "+$183.00 /
+  your payment". The payer now sees `+$<total − share> / you lent`; the
+  non-payer sees their share labelled "you owe". Payment rows were already
+  correct.
+- **Every page rubber-scrolled, overflow or not** (#67). Three stacked
+  causes: `.page-slider-container main` forced `min-height: 100vh` inside a
+  pane that is already shorter than the viewport; page mains carried
+  `min-h-dvh`; and bottom clearance was padded twice (the pane/wrapper's
+  `--nav-clearance` plus the page's own `pb-24`, and
+  `.content-with-floating-nav` re-adding the full nav clearance on top of
+  the wrapper's). Panes and wrappers now own all the clearance; pages keep
+  only their local spacing, with `content-with-floating-nav` reduced to the
+  FAB's 4.5rem.
+- **"Net across all groups" showed while creating a group** (#63). The
+  balance line on the groups page ignored `showCreate`; now gated on the
+  form being closed.
+- **A scan was a dead end until the request resolved** (#69). ScanLoader had
+  no exit; the composer now shows a Cancel button on the loader, and an
+  in-flight scan's late response is dropped via a run counter (same for the
+  mock timer) so cancelling can't yank you into the assignment flow. The
+  orphan `/scan` page — full-screen uploader, no back button, linked from
+  nowhere — is now a redirect to `/transactions/new`.
+
+### Already fixed (verified, no change needed)
+- **#66 bottom-sheet swipe-down** — `BottomSheet` has full drag-to-dismiss
+  (90px / 0.5px·ms⁻¹ thresholds, rubber-banded upward drag). Residual:
+  `CalculatorKeypad` draws a grab handle but ignores drags; cosmetic.
+- **#78 title colors** — everything already runs on the `--color-ink` /
+  `--color-ink-muted` tokens; no raw black/brown in any title. Residual:
+  heading *sizes* drift off the iOS type scale tokens in places.
+- **#68 profile placement** — largely covered by the header removal below
+  (Home's avatar is now the tappable `AccountButton`); a dedicated
+  profile-*edit* screen remains enhancement territory.
+
+### Architecture decisions
+- **#62/#70 were one bug, and a collaborator had already fixed it.**
+  `ao/projectowl-5/signout-placement` (commit `9c98829`) deleted the
+  AppShell header outright — which removes Sign out from Add Expense
+  *and* collapses the double app bar, both as the reporters asked. Rather
+  than re-derive it, we cherry-picked that commit onto `ui-fixes`; it
+  applied clean. Note for the branch reconciliation later: the `ao/*` and
+  `codex/*` branches sit on a diverged lineage (`dad5e5d`, a PR-merged
+  variant of the Aug 15 UI pass carrying `SlothCalculating`,
+  `ScanConfirmSheet`, `draft-guard`), so they don't fast-forward into
+  `ui-fixes` — each needs a deliberate merge or cherry-pick.
+
+## 2026-09-01 — The app header is gone; the account lives on Home
+
+Reported as "the Add Expense screen exposes a Sign Out option" (#62), with a
+note asking for a "buffer" before it fires. Sign out was never placed on the
+compose screen — it lived in the fixed app header in `AppShell`, which rendered
+on all eight signed-in screens. A misplaced global control, not an Add Expense
+problem.
+
+### The part that made it more than cosmetic
+`/transactions/new` draws its own header — `Cancel · New expense · Save` — so
+the two stacked, and **Sign out sat directly above Save, sharing a right
+edge**, 141px apart in a 718px-wide capture. The most destructive control in
+the app was one overshoot above the one people aim for most.
+
+Worse, it was the only navigation in the app that skipped the draft guard.
+`BottomNav`, `PageSlider` and the composer's own Cancel all route through
+`guardedNavigate`, so abandoning a half-entered expense asks first.
+`handleSignOut` called `signOut()` and then `window.location.href = "/"`
+directly. Verified in a browser rather than read off the code: typing a
+description and tapping Home raised "Leave without saving?"; the same draft,
+with Sign out, went straight to the login screen with no prompt at all.
+
+The button was also ~48×16px against the 44pt target the rest of the app
+respects, and its `hover:text-ink-muted` was the same colour as its resting
+state — so it had no hover feedback either.
+
+### Done
+- **The header is deleted, not rearranged.** It carried a wordmark and a Sign
+  out button and nothing else; screens already draw their own titles. Removing
+  it takes the collision with Save out of existence rather than moving it, and
+  gives every screen back 64px at the top — most visible on the composer, where
+  Save now has nothing above it.
+- **`AccountButton`** — Home's greeting avatar, which was decoration, is now a
+  44pt button opening a sheet that names the signed-in account and holds Sign
+  out. That is the buffer the report asked for: you get there on purpose. The
+  button, the sheet and the confirm are one self-contained unit, so there is
+  exactly one path to signing out and one place that knows what it costs.
+- **`--top-clearance`** replaces the two hardcoded `calc(4rem + …)` values in
+  `globals.css` and `PageSlider`. It isn't zero: the PWA runs
+  `black-translucent`, so the web view sits *under* the status bar, and the
+  offline banner overlays the same edge — the header used to cover both
+  incidentally. Defined once and read by both call sites, the same way
+  `--nav-clearance` already was.
+- **`isDraftDirty()`** in `draft-guard.ts`, and a draft-aware confirm behind
+  Sign out.
+
+### Architecture decisions
+1. **A control that belongs to one screen shouldn't be global chrome.** The
+   header existed to hold a wordmark and a sign-out; putting a destructive
+   action on all eight screens to serve one of them is how it ended up above
+   Save. Nothing else needed it.
+2. **Sign-out asks up front rather than routing through `guardedNavigate`.**
+   The guard holds a navigation while the user decides, which assumes there's
+   a state to stay in. Sign-out tears down the session, so "stay" isn't
+   recoverable afterwards. It asks first, in one prompt that names both the
+   expense being lost and the reason — two prompts would each say half.
+3. **Home-only placement closes the data-loss path structurally.** You can't
+   reach the account control from the composer without passing the leave guard
+   first, and the composer clears the dirty flag when `pathname` changes — so
+   in practice the sign-out confirm is a backstop that the leave guard
+   pre-empts. Kept anyway: `AccountButton` is self-contained, and the guard is
+   what stops the original bug returning silently if it's ever placed on
+   another surface.
+
+### Verification
+`tsc --noEmit` clean; simplify 13/13, allocation 18/18, settlement 10/10,
+security 35/35 — none of these touch this code, so they're a regression check
+rather than proof.
+
+Exercised in a real browser (`npm run testmode`, mock auth, seeded data):
+the header is absent and "Sign out" appears nowhere on `/`, `/groups`,
+`/activity`, `/transactions/new`, `/groups/[id]`, `/transactions` and
+`/payments/new`; the profile circle opens the sheet, Cancel closes it, and
+Sign out clears the session and lands on the login screen (confirmed against
+`DELETE /api/auth/session` in the server log). The composer's Save now has
+nothing above it, and the group detail page still clears the top edge without
+the header's 64px.
+
+### Known / deferred
+- **"Discard and leave" doesn't discard.** `confirmLeave()` clears the dirty
+  flag but never clears the composer, so the text is still there when you go
+  back — proven here by reading the field's value after choosing it. Predates
+  this work and left alone, but the prompt currently overstates what it does.
+- `/payments/new` registers no draft, so a half-entered payment is still lost
+  silently by any navigation. Pre-existing gap in the guard's coverage.
+- Removing the header removes the ItreSplit wordmark and sloth lockup from the
+  app entirely; the mark survives only on the ItreAI button and scan sheet.
+  Deliberate per the request, but the app no longer names itself in-app.
+- Not exercised on hardware. `--top-clearance` leans on
+  `env(safe-area-inset-top)`, which is 0 on desktop — the notch case is
+  reasoned about, not seen.
+
 ## 2026-08-15 — UI pass: surfaces inverted, swipe paging fixed, one mascot
 
 A round of visual and interaction work off the back of reference screens the

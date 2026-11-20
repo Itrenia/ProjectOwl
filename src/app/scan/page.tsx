@@ -1,88 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import ReceiptUploader from "@/components/ReceiptUploader";
-import ScanLoader from "@/components/ScanLoader";
-import ReceiptResult from "@/components/ReceiptResult";
-import ErrorAlert from "@/components/ErrorAlert";
-import { scanReceipt } from "@/lib/scan-receipt";
-import type { ReceiptExtractionResult } from "@/lib/schemas/receipt";
-
-type PageStatus = "idle" | "uploading" | "success" | "error";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 /**
- * Scan page — upload a receipt, send it to the API, and display the
- * extracted items and totals.
+ * Legacy scan entry point, kept only as a redirect.
  *
- * State machine: idle → uploading → success | error → idle (retry)
+ * Scanning now lives inside the Add Expense composer (/transactions/new),
+ * which owns the full flow — upload, loader with cancel, item assignment,
+ * save. Nothing in the app links here any more, and the old standalone page
+ * was a dead end: a full-screen uploader with no back button, outside the
+ * shell's navigation (#69). Any stale link or bookmark lands in the composer
+ * instead.
  */
 export default function ScanPage() {
-  const [status, setStatus] = useState<PageStatus>("idle");
-  const [result, setResult] = useState<ReceiptExtractionResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
-  const handleUpload = useCallback(async (file: File) => {
-    setStatus("uploading");
-    setError(null);
-    setResult(null);
+  useEffect(() => {
+    router.replace("/transactions/new");
+  }, [router]);
 
-    const outcome = await scanReceipt(file);
-
-    if (!outcome.ok) {
-      setError(`${outcome.failure.title} — ${outcome.failure.message}`);
-      setStatus("error");
-      return;
-    }
-
-    setResult(outcome.data);
-    setStatus("success");
-  }, []);
-
-  const handleRetry = useCallback(() => {
-    setStatus("idle");
-    setResult(null);
-    setError(null);
-  }, []);
-
-  return (
-    <main className="min-h-dvh flex flex-col items-center px-4 py-8">
-      {/* Header */}
-      <div className="w-full max-w-md mb-8">
-        <h1 className="text-2xl font-bold text-ink">Scan Receipt</h1>
-        <p className="text-sm text-ink-muted mt-1">
-          Upload a photo of your receipt and we&apos;ll extract the items for you.
-        </p>
-      </div>
-
-      {/* Upload area (shown in idle and error states) */}
-      {(status === "idle" || status === "error") && (
-        <ReceiptUploader onUpload={handleUpload} disabled={false} />
-      )}
-
-      {/* Error state */}
-      {status === "error" && error && (
-        <div className="mt-6 w-full">
-          <ErrorAlert message={error} onRetry={handleRetry} />
-        </div>
-      )}
-
-      {/* Success state */}
-      {status === "success" && result && (
-        <div className="w-full space-y-4">
-          <ReceiptResult data={result} />
-          <button
-            onClick={handleRetry}
-            className="w-full max-w-md mx-auto block px-4 py-2.5 text-sm font-medium
-                       text-[var(--primary)] border border-[var(--primary)] rounded-lg
-                       hover:bg-blueberry-100 transition-colors"
-          >
-            Scan another receipt
-          </button>
-        </div>
-      )}
-
-      {/* Loading overlay */}
-      {status === "uploading" && <ScanLoader />}
-    </main>
-  );
+  return null;
 }
